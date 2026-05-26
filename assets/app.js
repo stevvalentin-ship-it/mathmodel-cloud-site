@@ -344,6 +344,7 @@
       const canOpen = uploaded && hasSupabaseConfig && state.user;
       const sourceText = item.source === "problem" ? "赛题" : "论文";
       const types = (item.types || []).map((type) => `<span class="pill">${escapeHtml(type)}</span>`).join("");
+      const linkText = uploaded ? (canOpen ? "打开" : "登录打开") : "待上传";
       return `
         <article class="catalog-item">
           <div class="catalog-row">
@@ -359,7 +360,7 @@
                 ${uploaded ? `<span class="pill">已上云</span>` : `<span class="pill warn">待导入</span>`}
               </div>
             </div>
-            <a class="open-link" href="#" data-path="${escapeHtml(uploaded?.storage_path || "")}" data-enabled="${canOpen ? "yes" : "no"}">${canOpen ? "打开" : "待上传"}</a>
+            <a class="open-link" href="#" data-path="${escapeHtml(uploaded?.storage_path || "")}" data-enabled="${canOpen ? "yes" : "no"}">${linkText}</a>
           </div>
           <div class="meta">${escapeHtml(path)}</div>
         </article>
@@ -395,7 +396,7 @@
   }
 
   async function refreshCloudCatalog() {
-    if (!hasSupabaseConfig || !state.user) {
+    if (!hasSupabaseConfig) {
       state.cloudCatalog = store.get("mathmodel_demo_catalog", []);
       return;
     }
