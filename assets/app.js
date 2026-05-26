@@ -246,7 +246,10 @@
     const { error } = await client.auth.signUp({
       email,
       password,
-      options: { data: { display_name: displayName } }
+      options: {
+        data: { display_name: displayName },
+        emailRedirectTo: `${window.location.origin}${window.location.pathname}`
+      }
     });
     if (error) {
       $("#loginMsg").textContent = error.message;
