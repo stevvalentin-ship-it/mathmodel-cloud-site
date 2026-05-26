@@ -144,9 +144,18 @@
       btn.addEventListener("click", () => switchView(btn.dataset.view));
     });
 
-    $("#searchInput").addEventListener("input", (event) => {
+    const searchInput = $("#searchInput");
+    searchInput.addEventListener("input", (event) => {
       state.search = event.target.value.trim();
       renderCatalog();
+    });
+    searchInput.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      state.search = event.currentTarget.value.trim();
+      switchView("library");
+      renderCatalog();
+      $("#catalogList").scrollIntoView({ behavior: "smooth", block: "start" });
     });
     $("#sourceFilter").addEventListener("change", (event) => {
       state.source = event.target.value;
@@ -293,13 +302,18 @@
   }
 
   function renderYears() {
-    const years = Array.from(new Set(rawCatalog.map((item) => item.year).filter(Boolean))).sort((a, b) => b - a);
-    const counts = summary.byYear || {};
+    const catalog = allCatalogItems();
+    const years = Array.from(new Set(catalog.map((item) => item.year).filter(Boolean))).sort((a, b) => b - a);
+    const counts = catalog.reduce((acc, item) => {
+      const year = item.year;
+      if (!year) return acc;
+      acc[year] = (acc[year] || 0) + 1;
+      return acc;
+    }, {});
     $("#yearList").innerHTML = [
-      `<button class="year-btn ${state.year === "all" ? "active" : ""}" data-year="all" type="button"><span>全部</span><small>${rawCatalog.length}</small></button>`,
+      `<button class="year-btn ${state.year === "all" ? "active" : ""}" data-year="all" type="button"><span>全部</span><small>${catalog.length}</small></button>`,
       ...years.map((year) => {
-        const row = counts[year] || {};
-        const count = (row.problem || 0) + (row.paper || 0) + (row.bonus || 0);
+        const count = counts[year] || 0;
         return `<button class="year-btn ${String(state.year) === String(year) ? "active" : ""}" data-year="${year}" type="button"><span>${year}</span><small>${count}</small></button>`;
       })
     ].join("");
@@ -312,9 +326,40 @@
     });
   }
 
+  function cloudRowToCatalogItem(row) {
+    const path = normalizePath(row.relative_path || row.storage_path || row.name || row.title);
+    const match = findCatalogMatch(path) || {};
+    return {
+      ...match,
+      path: normalizePath(match.path || path),
+      source: row.source || match.source || guessSourceFromPath(path, "auto"),
+      collection: row.collection || match.collection || "team upload",
+      year: row.year || match.year || null,
+      types: row.problem_types || match.types || [],
+      title: row.title || match.title || row.name || basename(path),
+      name: row.name || match.name || basename(path),
+      folder: row.folder || match.folder || "",
+      ext: row.ext || match.ext || "",
+      kind: row.kind || match.kind || "file",
+      size: row.size || match.size || 0,
+      bonus: Boolean(row.bonus || match.bonus),
+      cloudOnly: !match.path
+    };
+  }
+
+  function allCatalogItems() {
+    const map = new Map(rawCatalog.map((item) => [normalizePath(item.path), item]));
+    state.cloudCatalog.forEach((row) => {
+      const key = normalizePath(row.relative_path || row.storage_path || row.name || row.title);
+      if (!key || map.has(key)) return;
+      map.set(key, cloudRowToCatalogItem(row));
+    });
+    return Array.from(map.values());
+  }
+
   function filteredCatalog() {
     const term = state.search.toLowerCase();
-    return rawCatalog
+    return allCatalogItems()
       .filter((item) => state.year === "all" || String(item.year) === String(state.year))
       .filter((item) => state.source === "all" || item.source === state.source)
       .filter((item) => state.type === "all" || (item.types || []).includes(state.type))
@@ -381,12 +426,34 @@
 
   async function openStoragePath(path) {
     if (!hasSupabaseConfig || !path) return;
+    const popup = window.open("about:blank", "_blank");
+    if (popup) {
+      try {
+        popup.document.title = "Opening file";
+        popup.document.body.innerHTML = '<p style="font:16px system-ui;padding:24px;">文件正在打开...</p>';
+      } catch {}
+    }
     const { data, error } = await client.storage.from(bucket).createSignedUrl(path, 60 * 10);
     if (error) {
+      if (popup) popup.close();
       toast(error.message);
       return;
     }
-    window.open(data.signedUrl, "_blank", "noopener");
+    const signedUrl = data.signedUrl || data.signedURL;
+    if (!signedUrl) {
+      if (popup) popup.close();
+      toast("没有拿到文件打开链接");
+      return;
+    }
+    const absoluteUrl = signedUrl.startsWith("http") ? signedUrl : `${cfg.SUPABASE_URL}/storage/v1${signedUrl}`;
+    if (popup && !popup.closed) {
+      try {
+        popup.document.body.innerHTML = `<p style="font:16px system-ui;padding:24px;">文件正在打开。如果没有自动跳转，<a href="${escapeHtml(absoluteUrl)}">点这里打开</a>。</p>`;
+      } catch {}
+      popup.location.replace(absoluteUrl);
+    } else {
+      window.location.href = absoluteUrl;
+    }
   }
 
   async function refreshAll() {
@@ -498,7 +565,7 @@
   }
 
   function renderFileLinks(files) {
-    if (!files.length) return "";
+    if (!files.length) return `<div class="file-list empty-files">这条记录没有附件，请删除后重新上传文件夹。</div>`;
     return `<div class="file-list">${files.map((file) => {
       const path = file.storage_path || "";
       const enabled = hasSupabaseConfig && state.user && path;
@@ -786,8 +853,9 @@
   }
 
   function updateMetrics() {
-    const years = new Set(rawCatalog.map((item) => item.year).filter(Boolean));
-    $("#metricTotal").textContent = rawCatalog.length.toLocaleString("zh-CN");
+    const catalog = allCatalogItems();
+    const years = new Set(catalog.map((item) => item.year).filter(Boolean));
+    $("#metricTotal").textContent = catalog.length.toLocaleString("zh-CN");
     $("#metricYears").textContent = years.size.toLocaleString("zh-CN");
     $("#metricPosts").textContent = state.posts.length.toLocaleString("zh-CN");
     $("#metricUploads").textContent = (state.resources.length + state.cloudCatalog.length).toLocaleString("zh-CN");
