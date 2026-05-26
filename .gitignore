@@ -1,4 +1,5 @@
 preview*.png
 screen_*.png
+tools/*.done.json
 .DS_Store
 Thumbs.db

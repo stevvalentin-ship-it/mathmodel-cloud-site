@@ -224,7 +224,8 @@ h2 {
 
 .primary,
 .secondary,
-.ghost {
+.ghost,
+.danger {
   min-height: 40px;
   border-radius: 8px;
   border: 1px solid transparent;
@@ -250,6 +251,19 @@ h2 {
   color: var(--ink);
   background: transparent;
   border-color: var(--line);
+}
+
+.danger {
+  min-height: 34px;
+  color: #8f2c28;
+  background: #fff3f0;
+  border-color: #efc4bd;
+}
+
+.danger:hover {
+  color: #fffdf7;
+  background: var(--red);
+  border-color: var(--red);
 }
 
 .wide {

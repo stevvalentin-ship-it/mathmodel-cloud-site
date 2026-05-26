@@ -67,6 +67,33 @@
     return normalizePath(path).split("/").filter(Boolean).pop() || "未命名文件";
   }
 
+  function hashText(value) {
+    let hash = 2166136261;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(36);
+  }
+
+  function fileExt(name) {
+    const clean = basename(name);
+    const dot = clean.lastIndexOf(".");
+    return dot > -1 ? clean.slice(dot).toLowerCase().replace(/[^a-z0-9.]/g, "") : "";
+  }
+
+  function safeStoragePath(prefix, relativePath, file) {
+    const cleanPrefix = normalizePath(prefix).replace(/[^a-zA-Z0-9/_-]/g, "_");
+    const base = basename(relativePath).replace(/\.[^.]+$/, "");
+    const safeName = base
+      .normalize("NFKD")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 48) || "file";
+    const hash = hashText(`${relativePath}:${file.name}:${file.size}:${file.lastModified}`);
+    return `${cleanPrefix}/${hash}-${safeName}${fileExt(file.name)}`;
+  }
+
   function formatSize(size) {
     const num = Number(size || 0);
     if (!num) return "未知大小";
@@ -437,6 +464,7 @@
                 <span>${escapeHtml(post.problem_type || "")}</span>
               </div>
             </div>
+            <button class="danger" type="button" data-delete-post="${escapeHtml(post.id)}">删除</button>
           </div>
           <p class="post-body">${escapeHtml(post.body)}</p>
           ${post.tags ? `<div class="meta">${escapeHtml(post.tags)}</div>` : ""}
@@ -452,7 +480,10 @@
       const files = item.resource_files || item.files || [];
       return `
         <article class="resource-item">
-          <div class="resource-title">${escapeHtml(item.title)}</div>
+          <div class="catalog-row">
+            <div class="resource-title">${escapeHtml(item.title)}</div>
+            <button class="danger" type="button" data-delete-resource="${escapeHtml(item.id)}">删除</button>
+          </div>
           <div class="meta">
             <span>${escapeHtml(item.owner_name || "队友")}</span>
             <span>${new Date(item.created_at || Date.now()).toLocaleString("zh-CN")}</span>
@@ -475,6 +506,20 @@
   }
 
   document.addEventListener("click", async (event) => {
+    const deletePostBtn = event.target.closest("[data-delete-post]");
+    if (deletePostBtn) {
+      event.preventDefault();
+      await deletePost(deletePostBtn.dataset.deletePost);
+      return;
+    }
+
+    const deleteResourceBtn = event.target.closest("[data-delete-resource]");
+    if (deleteResourceBtn) {
+      event.preventDefault();
+      await deleteResource(deleteResourceBtn.dataset.deleteResource);
+      return;
+    }
+
     const link = event.target.closest(".file-link");
     if (!link) return;
     event.preventDefault();
@@ -528,7 +573,13 @@
       toast(error.message);
       return;
     }
-    await uploadRelatedFiles(files, `posts/${data.id}`, "post_files", { post_id: data.id });
+    try {
+      await uploadRelatedFiles(files, `posts/${data.id}`, "post_files", { post_id: data.id });
+    } catch (error) {
+      await client.from("posts").delete().eq("id", data.id);
+      toast(error.message || "附件上传失败");
+      return;
+    }
     form.reset();
     await refreshPosts();
     toast("已发布到云端协作区");
@@ -570,7 +621,13 @@
       toast(error.message);
       return;
     }
-    await uploadRelatedFiles(files, `resources/${data.id}`, "resource_files", { resource_id: data.id });
+    try {
+      await uploadRelatedFiles(files, `resources/${data.id}`, "resource_files", { resource_id: data.id });
+    } catch (error) {
+      await client.from("team_resources").delete().eq("id", data.id);
+      toast(error.message || "文件上传失败");
+      return;
+    }
     form.reset();
     await refreshResources();
     toast("已上传到团队资料");
@@ -579,7 +636,7 @@
   async function uploadRelatedFiles(files, prefix, table, extraRow) {
     for (const file of files) {
       const relativePath = getFileRelativePath(file);
-      const storagePath = `${prefix}/${relativePath}`;
+      const storagePath = safeStoragePath(prefix, relativePath, file);
       const { error: uploadError } = await client.storage.from(bucket).upload(storagePath, file, { upsert: true });
       if (uploadError) throw uploadError;
       const row = {
@@ -593,6 +650,52 @@
       const { error } = await client.from(table).insert(row);
       if (error) throw error;
     }
+  }
+
+  async function removeStorageObjects(paths) {
+    const cleanPaths = paths.filter(Boolean);
+    if (!cleanPaths.length || !hasSupabaseConfig) return;
+    await client.storage.from(bucket).remove(cleanPaths);
+  }
+
+  async function deletePost(postId) {
+    if (!postId || !requireLogin()) return;
+    if (!window.confirm("确定删除这条协作内容吗？")) return;
+    if (!hasSupabaseConfig) {
+      const posts = store.get("mathmodel_demo_posts", []).filter((post) => post.id !== postId);
+      store.set("mathmodel_demo_posts", posts);
+      await refreshPosts();
+      return;
+    }
+    const { data: files } = await client.from("post_files").select("storage_path").eq("post_id", postId);
+    await removeStorageObjects((files || []).map((file) => file.storage_path));
+    const { error } = await client.from("posts").delete().eq("id", postId);
+    if (error) {
+      toast(error.message);
+      return;
+    }
+    await refreshPosts();
+    toast("已删除");
+  }
+
+  async function deleteResource(resourceId) {
+    if (!resourceId || !requireLogin()) return;
+    if (!window.confirm("确定删除这份团队资料吗？")) return;
+    if (!hasSupabaseConfig) {
+      const resources = store.get("mathmodel_demo_resources", []).filter((item) => item.id !== resourceId);
+      store.set("mathmodel_demo_resources", resources);
+      await refreshResources();
+      return;
+    }
+    const { data: files } = await client.from("resource_files").select("storage_path").eq("resource_id", resourceId);
+    await removeStorageObjects((files || []).map((file) => file.storage_path));
+    const { error } = await client.from("team_resources").delete().eq("id", resourceId);
+    if (error) {
+      toast(error.message);
+      return;
+    }
+    await refreshResources();
+    toast("已删除");
   }
 
   async function uploadCatalogFolder(event) {
@@ -639,7 +742,7 @@
       const file = files[index];
       const relativePath = getFileRelativePath(file);
       const match = findCatalogMatch(relativePath) || {};
-      const storagePath = `catalog/${relativePath}`;
+      const storagePath = safeStoragePath("catalog/manual", relativePath, file);
       const { error: uploadError } = await client.storage.from(bucket).upload(storagePath, file, { upsert: true });
       if (uploadError) {
         toast(uploadError.message);

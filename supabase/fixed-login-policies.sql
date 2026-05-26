@@ -22,6 +22,10 @@ drop policy if exists posts_insert_fixed_login on public.posts;
 create policy posts_insert_fixed_login on public.posts
 for insert to anon, authenticated with check (true);
 
+drop policy if exists posts_delete_fixed_login on public.posts;
+create policy posts_delete_fixed_login on public.posts
+for delete to anon, authenticated using (true);
+
 drop policy if exists post_files_select_fixed_login on public.post_files;
 create policy post_files_select_fixed_login on public.post_files
 for select to anon, authenticated using (true);
@@ -29,6 +33,10 @@ for select to anon, authenticated using (true);
 drop policy if exists post_files_insert_fixed_login on public.post_files;
 create policy post_files_insert_fixed_login on public.post_files
 for insert to anon, authenticated with check (true);
+
+drop policy if exists post_files_delete_fixed_login on public.post_files;
+create policy post_files_delete_fixed_login on public.post_files
+for delete to anon, authenticated using (true);
 
 drop policy if exists team_resources_select_fixed_login on public.team_resources;
 create policy team_resources_select_fixed_login on public.team_resources
@@ -38,6 +46,10 @@ drop policy if exists team_resources_insert_fixed_login on public.team_resources
 create policy team_resources_insert_fixed_login on public.team_resources
 for insert to anon, authenticated with check (true);
 
+drop policy if exists team_resources_delete_fixed_login on public.team_resources;
+create policy team_resources_delete_fixed_login on public.team_resources
+for delete to anon, authenticated using (true);
+
 drop policy if exists resource_files_select_fixed_login on public.resource_files;
 create policy resource_files_select_fixed_login on public.resource_files
 for select to anon, authenticated using (true);
@@ -45,6 +57,10 @@ for select to anon, authenticated using (true);
 drop policy if exists resource_files_insert_fixed_login on public.resource_files;
 create policy resource_files_insert_fixed_login on public.resource_files
 for insert to anon, authenticated with check (true);
+
+drop policy if exists resource_files_delete_fixed_login on public.resource_files;
+create policy resource_files_delete_fixed_login on public.resource_files
+for delete to anon, authenticated using (true);
 
 drop policy if exists storage_select_fixed_login on storage.objects;
 create policy storage_select_fixed_login on storage.objects
@@ -61,3 +77,8 @@ create policy storage_update_fixed_login on storage.objects
 for update to anon, authenticated
 using (bucket_id = 'mathmodel-files')
 with check (bucket_id = 'mathmodel-files');
+
+drop policy if exists storage_delete_fixed_login on storage.objects;
+create policy storage_delete_fixed_login on storage.objects
+for delete to anon, authenticated
+using (bucket_id = 'mathmodel-files');
