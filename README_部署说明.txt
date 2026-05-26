@@ -6,7 +6,7 @@ C:\Users\杨乐然\Desktop\mathmodel_cloud_site
 推荐方案
 1. GitHub Pages / Cloudflare Pages / Vercel：负责让网站一直在线。
 2. Supabase：负责账号登录、资料记录、协作笔记、文件存储。
-3. team_members 表：只允许你们三位队友进入和查看上传内容。
+3. 固定姓名和统一密码控制队内入口，Supabase 保存协作笔记和上传文件。
 
 第一步：创建 Supabase 项目
 1. 打开 https://supabase.com/ 并登录。
@@ -20,13 +20,15 @@ C:\Users\杨乐然\Desktop\mathmodel_cloud_site
    SUPABASE_URL
    SUPABASE_ANON_KEY
 
-第二步：创建队友账号
-1. 打开网站。
-2. 三位队友分别用邮箱和密码注册。
-3. 回到 Supabase SQL Editor，打开并修改：
-   supabase/TEAM_SETUP.sql
-4. 把三个邮箱替换成真实邮箱，然后运行。
-5. 只有在 team_members 表里的用户能查看资料、发布协作、上传文件。
+第二步：启用固定登录权限
+1. 回到 Supabase SQL Editor。
+2. 运行：
+   supabase/fixed-login-policies.sql
+3. 网站固定登录信息：
+   杨乐然 / 代码手 / 123123123123
+   邢凯轶 / 论文手 / 123123123123
+   保竣然 / 建模手 / 123123123123
+4. 这套方式适合队内轻量协作，不需要邮箱确认。
 
 第三步：导入原来的资料库
 1. 登录网站。

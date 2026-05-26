@@ -5,6 +5,12 @@
   const bucket = cfg.STORAGE_BUCKET || "mathmodel-files";
   const hasSupabaseConfig = Boolean(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && window.supabase);
   const client = hasSupabaseConfig ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY) : null;
+  const fixedPassword = "123123123123";
+  const fixedUsers = [
+    { name: "杨乐然", role: "代码手" },
+    { name: "邢凯轶", role: "论文手" },
+    { name: "保竣然", role: "建模手" }
+  ];
 
   const state = {
     currentView: "library",
@@ -132,8 +138,6 @@
     $("#loginOpen").addEventListener("click", () => $("#loginDialog").showModal());
     $("#logoutBtn").addEventListener("click", logout);
     $("#signinBtn").addEventListener("click", signin);
-    $("#signupBtn").addEventListener("click", signup);
-    $("#demoLogin").addEventListener("click", demoLogin);
 
     $("#postForm").addEventListener("submit", createPost);
     $("#resourceForm").addEventListener("submit", createResource);
@@ -175,27 +179,11 @@
   }
 
   async function loadSession() {
-    if (!hasSupabaseConfig) {
-      const demoUser = store.get("mathmodel_demo_user", null);
-      if (demoUser) {
-        state.user = demoUser;
-        state.profile = { display_name: demoUser.user_metadata.display_name, role: "队友" };
-      }
-      updateUserBox();
-      updateCloudStatus();
-      return;
+    const fixedUser = store.get("mathmodel_fixed_user", null);
+    if (fixedUser) {
+      setFixedUser(fixedUser);
+      syncRoleSelect();
     }
-
-    const { data } = await client.auth.getSession();
-    state.user = data.session && data.session.user;
-    if (state.user) await loadProfile();
-    client.auth.onAuthStateChange(async (_event, session) => {
-      state.user = session && session.user;
-      if (state.user) await loadProfile();
-      updateUserBox();
-      updateCloudStatus();
-      await refreshAll();
-    });
     updateUserBox();
     updateCloudStatus();
   }
@@ -219,65 +207,43 @@
 
   async function signin() {
     const form = $("#loginForm");
-    const email = form.email.value.trim();
+    const loginName = form.login_name.value.trim();
     const password = form.password.value;
-    if (!hasSupabaseConfig) {
-      demoLogin();
+    const profile = fixedUsers.find((user) => user.name === loginName);
+    if (!profile) {
+      $("#loginMsg").textContent = "请选择正确的队员姓名。";
       return;
     }
-    const { error } = await client.auth.signInWithPassword({ email, password });
-    if (error) {
-      $("#loginMsg").textContent = error.message;
+    if (password !== fixedPassword) {
+      $("#loginMsg").textContent = "密码不对。";
       return;
     }
-    $("#loginDialog").close();
-    toast("登录成功");
-  }
-
-  async function signup() {
-    const form = $("#loginForm");
-    const email = form.email.value.trim();
-    const password = form.password.value;
-    const displayName = form.display_name.value.trim() || email.split("@")[0];
-    if (!hasSupabaseConfig) {
-      demoLogin();
-      return;
-    }
-    const { error } = await client.auth.signUp({
-      email,
-      password,
-      options: {
-        data: { display_name: displayName },
-        emailRedirectTo: `${window.location.origin}${window.location.pathname}`
-      }
-    });
-    if (error) {
-      $("#loginMsg").textContent = error.message;
-      return;
-    }
-    $("#loginMsg").textContent = "注册成功。如果 Supabase 开启了邮箱确认，请先去邮箱点确认链接。";
-  }
-
-  function demoLogin() {
-    const form = $("#loginForm");
-    const displayName = form.display_name.value.trim() || "本地演示队友";
-    state.user = {
-      id: "demo-user",
-      email: "demo@local",
-      user_metadata: { display_name: displayName }
-    };
-    state.profile = { display_name: displayName, role: "演示" };
-    store.set("mathmodel_demo_user", state.user);
+    store.set("mathmodel_fixed_user", profile);
+    setFixedUser(profile);
+    syncRoleSelect();
     updateUserBox();
     updateCloudStatus();
     $("#loginDialog").close();
-    refreshAll();
-    toast("已进入本地演示模式");
+    await refreshAll();
+    toast("登录成功");
+  }
+
+  function setFixedUser(profile) {
+    state.user = {
+      id: null,
+      email: `${profile.name}@fixed.local`,
+      user_metadata: { display_name: profile.name }
+    };
+    state.profile = { display_name: profile.name, role: profile.role, is_admin: profile.name === "杨乐然" };
+  }
+
+  function syncRoleSelect() {
+    const roleSelect = $("#postForm [name='role']");
+    if (roleSelect && state.profile?.role) roleSelect.value = state.profile.role;
   }
 
   async function logout() {
-    if (hasSupabaseConfig) await client.auth.signOut();
-    store.set("mathmodel_demo_user", null);
+    store.set("mathmodel_fixed_user", null);
     state.user = null;
     state.profile = null;
     updateUserBox();
@@ -534,7 +500,7 @@
     const post = {
       author_id: state.user.id,
       author_name: state.profile?.display_name || state.user.user_metadata?.display_name || state.user.email,
-      role: form.role.value,
+      role: state.profile?.role || form.role.value,
       year: Number(form.year.value) || null,
       problem_type: form.problem_type.value,
       title: form.title.value.trim(),
