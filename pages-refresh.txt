@@ -1,1 +1,1 @@
-gh-pages refresh marker
+gh-pages refresh marker after unpublish reset
